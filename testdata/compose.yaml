@@ -1,0 +1,8 @@
+services:
+  web:
+    image: nginx:${WEB_TAG:-latest}
+    mem_limit: 512M
+    environment:
+      GREETING: hello
+  db:
+    image: redis:7-alpine
