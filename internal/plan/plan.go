@@ -78,7 +78,6 @@ func Diff(ctx context.Context, desired, running []Service, resolve Resolver) ([]
 			out = append(out, Change{Service: desiredService.Name, Action: "create", Reason: []string{"not running"}})
 			continue
 		}
-		delete(live, desiredService.Name)
 
 		c := Change{Service: desiredService.Name, Action: "no change"}
 
@@ -113,6 +112,8 @@ func Diff(ctx context.Context, desired, running []Service, resolve Resolver) ([]
 			c.Action = "update"
 		}
 		out = append(out, c)
+		delete(live, desiredService.Name)
+
 	}
 	for name := range live {
 		out = append(out, Change{Service: name, Action: "remove", Reason: []string{"not in compose file"}})
