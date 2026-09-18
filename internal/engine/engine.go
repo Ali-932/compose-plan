@@ -6,7 +6,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/Ali-932/compose-plan/internal/plan"
@@ -53,13 +52,14 @@ func Running(ctx context.Context, projectName string) ([]plan.Service, error) {
 
 		}
 		img, err := apiClient.ImageInspect(ctx, c.ImageID)
-		fmt.Printf("error: %v\n", err)
-		if err != nil {
-			return nil, err
-		}
-		if len(img.RepoDigests) > 0 {
+
+		if err == nil && len(img.RepoDigests) > 0 {
 			_, s.Digest, _ = strings.Cut(img.RepoDigests[0], "@")
 
+		}
+		s.ImageID = c.ImageID
+		if tagged, err := apiClient.ImageInspect(ctx, s.Image); err == nil {
+			s.TaggedID = tagged.ID
 		}
 		out = append(out, s)
 	}

@@ -20,6 +20,8 @@ type Service struct {
 	Name     string
 	Image    string
 	Digest   string
+	ImageID  string
+	TaggedID string
 	MemLimit int64
 	Env      map[string]string
 	Build    bool
@@ -82,6 +84,8 @@ func Diff(ctx context.Context, desired, running []Service, resolve Resolver) ([]
 
 		if desiredService.Image != r.Image {
 			c.Reason = append(c.Reason, fmt.Sprintf("image %s -> %s", r.Image, desiredService.Image))
+		} else if r.TaggedID != "" && r.TaggedID != r.ImageID {
+			c.Reason = append(c.Reason, fmt.Sprintf("image %q changed on this machine %s -> %s", desiredService.Image, shortDigest(r.ImageID), shortDigest(r.TaggedID)))
 		} else if !desiredService.Build && r.Digest != "" && resolve != nil {
 			got, err := resolve(ctx, desiredService.Image)
 			if err != nil {
