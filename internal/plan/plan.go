@@ -57,7 +57,7 @@ func BytesToHumanSize(b int64) string {
 	return fmt.Sprintf("%.1f %sB", size, units[exp])
 }
 
-func shortDigest(digest string) string {
+func ShortDigest(digest string) string {
 	if h, ok := strings.CutPrefix(digest, "sha256:"); ok && len(h) > 12 {
 		return "sha256:" + h[:12] + "..."
 	}
@@ -85,14 +85,14 @@ func Diff(ctx context.Context, desired, running []Service, resolve Resolver) ([]
 		if desiredService.Image != r.Image {
 			c.Reason = append(c.Reason, fmt.Sprintf("image %s -> %s", r.Image, desiredService.Image))
 		} else if r.TaggedID != "" && r.TaggedID != r.ImageID {
-			c.Reason = append(c.Reason, fmt.Sprintf("image %q changed on this machine %s -> %s", desiredService.Image, shortDigest(r.ImageID), shortDigest(r.TaggedID)))
+			c.Reason = append(c.Reason, fmt.Sprintf("image %q changed on this machine %s -> %s", desiredService.Image, ShortDigest(r.ImageID), ShortDigest(r.TaggedID)))
 		} else if !desiredService.Build && r.Digest != "" && resolve != nil {
 			got, err := resolve(ctx, desiredService.Image)
 			if err != nil {
 				c.Notes = append(c.Notes, "could not check registry: "+err.Error())
 			} else if got != r.Digest {
 				c.Pull = true
-				c.Reason = append(c.Reason, fmt.Sprintf("image %q moved: %s -> %s", desiredService.Image, shortDigest(r.Digest), shortDigest(got)))
+				c.Reason = append(c.Reason, fmt.Sprintf("image %q moved: %s -> %s", desiredService.Image, ShortDigest(r.Digest), ShortDigest(got)))
 			}
 		}
 

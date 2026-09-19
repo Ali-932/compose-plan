@@ -6,7 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/Ali-932/compose-plan/internal/compose"
@@ -21,6 +24,7 @@ const usage = `usage: compose-plan [-f file]... [-p name] [--env-file file]... <
 
   plan    show what apply would change
   apply   deploy with docker compose and record a history entry
+  history list recorded deploys, newest first
 `
 
 func main() {
@@ -38,6 +42,10 @@ func main() {
 		_, _, err = runPlan(ctx, files, envFiles, name)
 	case "apply":
 		err = runApply(ctx, files, envFiles, name)
+	case "history":
+		err = runHistory(ctx, files, envFiles, name)
+	case "diff":
+		err = runDiff(ctx, files, envFiles, name, pflag.Arg(1), pflag.Arg(2))
 	default:
 		_, _ = fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
@@ -100,6 +108,8 @@ func runApply(ctx context.Context, files, envFiles []string, name string) error 
 			pullServices = append(pullServices, service)
 		}
 	}
+	sort.Strings(servicesChanged)
+
 	if len(pullServices) > 0 {
 		//pullArg := strings.Join(pullServices, " ")
 		pullDockerArgs := append(append([]string{}, args...), "pull")
@@ -152,4 +162,85 @@ func runApply(ctx context.Context, files, envFiles []string, name string) error 
 	fmt.Printf("deployed entry #%d  %s  %s  %s  %d services\n",
 		entry.Seq, entry.Time.Format("2006-01-02 15:04"), entry.User, entry.Commit, len(entry.Services))
 	return nil
+}
+
+func runHistory(ctx context.Context, files, envFiles []string, name string) error {
+	project, err := compose.Load(ctx, files, envFiles, name)
+	if err != nil {
+		return err
+	}
+
+	entries, err := history.Read(filepath.Join(project.WorkingDir, ".compose-plan", "history.jsonl"))
+	if err != nil {
+		return err
+	}
+
+	if len(entries) == 0 {
+		fmt.Println("no deploys recorded yet")
+		return nil
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+	for i := len(entries) - 1; i >= 0; i-- {
+		e := entries[i]
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", fmt.Sprintf("#%d", e.Seq), e.Time.Format("Jan _2 15:04"), e.User, e.Commit, e.Summary)
+	}
+
+	tw.Flush()
+	return nil
+}
+
+func runDiff(ctx context.Context, files, envFiles []string, name string, a, b string) error {
+	project, err := compose.Load(ctx, files, envFiles, name)
+	if err != nil {
+		return err
+	}
+	entries, err := history.Read(filepath.Join(project.WorkingDir, ".compose-plan", "history.jsonl"))
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		fmt.Println("no deploys recorded yet")
+		return nil
+	}
+	aSeq, err := strconv.Atoi(a)
+	if err != nil {
+		return err
+	}
+	bSeq, err := strconv.Atoi(b)
+	if err != nil {
+		return err
+	}
+	aEntry, err := findEntry(aSeq, entries)
+	if err != nil {
+		return err
+	}
+	bEntry, err := findEntry(bSeq, entries)
+	if err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+	for svc, digest := range aEntry.Services {
+		if BDigest, ok := bEntry.Services[svc]; !ok {
+			fmt.Fprintf(tw, "%s\tremoved\t%s\n", svc, plan.ShortDigest(digest))
+		} else if digest != BDigest {
+			fmt.Fprintf(tw, "%s\timage\t%s -> %s\n", svc, plan.ShortDigest(digest), plan.ShortDigest(BDigest))
+		}
+	}
+	for svc, digest := range bEntry.Services {
+		if _, ok := aEntry.Services[svc]; !ok {
+			fmt.Fprintf(tw, "%s\tadded\t%s\n", svc, plan.ShortDigest(digest))
+		}
+	}
+	return tw.Flush()
+
+}
+
+func findEntry(entrySeq int, Entries []history.Entry) (*history.Entry, error) {
+	for _, entry := range Entries {
+		if entry.Seq == entrySeq {
+			return &entry, nil
+		}
+	}
+	return &history.Entry{}, fmt.Errorf("no entry with seq %d", entrySeq)
+
 }
