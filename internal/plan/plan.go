@@ -32,6 +32,7 @@ type Change struct {
 	Action  string
 	Reason  []string
 	Notes   []string
+	Pull    bool
 }
 
 type Resolver func(ctx context.Context, ref string) (string, error)
@@ -90,6 +91,7 @@ func Diff(ctx context.Context, desired, running []Service, resolve Resolver) ([]
 			if err != nil {
 				c.Notes = append(c.Notes, "could not check registry: "+err.Error())
 			} else if got != r.Digest {
+				c.Pull = true
 				c.Reason = append(c.Reason, fmt.Sprintf("image %q moved: %s -> %s", desiredService.Image, shortDigest(r.Digest), shortDigest(got)))
 			}
 		}
