@@ -149,3 +149,10 @@ func Render(w io.Writer, changes []Change) {
 
 	tw.Flush()
 }
+
+func (s Service) Fingerprint() string {
+	if s.Digest != "" {
+		return s.Digest
+	}
+	return s.ImageID
+}

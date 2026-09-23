@@ -66,3 +66,13 @@ func Running(ctx context.Context, projectName string) ([]plan.Service, error) {
 	return out, nil
 
 }
+
+func HasImage(ctx context.Context, id string) bool {
+	apiClient, err := client.New(client.FromEnv)
+	if err != nil {
+		return false
+	}
+	defer apiClient.Close()
+	_, err = apiClient.ImageInspect(ctx, id)
+	return err == nil
+}
