@@ -1,12 +1,55 @@
 package plan
 
-import "testing"
+import (
+	"bytes"
+	"strings"
+	"testing"
+)
 
-func TestConversion(t *testing.T) {
-	var bytes int64
-	bytes = 536_870_912
-	humanSize := BytesToHumanSize(bytes)
-	t.Logf("bytes: %d", bytes)
-	t.Logf("Human size:       %s", humanSize)
+func TestRender(t *testing.T) {
+	var buf bytes.Buffer
+	Render(&buf, []Change{
+		{Service: "worker", Action: "update", Reason: []string{"first reason", "second reason"}, Notes: []string{"a note"}},
+		{Service: "db", Action: "no change"},
+	})
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("want 4 lines, got %d:\n%s", len(lines), buf.String())
+	}
+	if !strings.HasPrefix(lines[0], "worker") || !strings.HasSuffix(lines[0], "first reason") {
+		t.Errorf("first line: %q", lines[0])
+	}
+	// Continuation lines start with padding and line up under the first reason.
+	if col := strings.Index(lines[0], "first reason"); strings.Index(lines[1], "second reason") != col || strings.Index(lines[2], "a note") != col {
+		t.Errorf("continuation lines not aligned:\n%s", buf.String())
+	}
+	if strings.Join(strings.Fields(lines[3]), " ") != "db no change" {
+		t.Errorf("no change line: %q", lines[3])
+	}
+}
 
+func TestShortDigest(t *testing.T) {
+	if got := ShortDigest("sha256:0123456789abcdef0123"); got != "sha256:0123456789ab..." {
+		t.Errorf("got %q", got)
+	}
+	if got := ShortDigest("short"); got != "short" {
+		t.Errorf("non-digest must pass through, got %q", got)
+	}
+}
+
+func TestFingerprint(t *testing.T) {
+	if got := (Service{Digest: "d", ImageID: "i"}).Fingerprint(); got != "d" {
+		t.Errorf("registry digest wins, got %q", got)
+	}
+	if got := (Service{ImageID: "i"}).Fingerprint(); got != "i" {
+		t.Errorf("local build falls back to image ID, got %q", got)
+	}
+}
+
+func TestBytesToHumanSize(t *testing.T) {
+	for in, want := range map[int64]string{0: "unlimited", 512 << 20: "512.0 MB", 1 << 30: "1.0 GB"} {
+		if got := BytesToHumanSize(in); got != want {
+			t.Errorf("BytesToHumanSize(%d) = %q, want %q", in, got, want)
+		}
+	}
 }
