@@ -26,7 +26,7 @@ func Resolve(ctx context.Context, image string) (string, error) {
 	img, err := remote.Head(ref, remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	if err != nil {
 		var terr *transport.Error
-		if errors.As(err, &terr) && terr.StatusCode == http.StatusNotFound || terr.StatusCode == http.StatusUnauthorized {
+		if errors.As(err, &terr) && (terr.StatusCode == http.StatusNotFound || terr.StatusCode == http.StatusUnauthorized) {
 			return "", fmt.Errorf("%s not found on %s, assuming a local image", image, ref.Context().RegistryStr())
 		}
 		return "", err
