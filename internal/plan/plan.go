@@ -8,12 +8,15 @@ package plan
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
+	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
-	"time"
 )
 
 type Service struct {
@@ -22,9 +25,7 @@ type Service struct {
 	Digest   string
 	ImageID  string
 	TaggedID string
-	MemLimit int64
-	Env      map[string]string
-	Build    bool
+	Config   map[string]any
 }
 
 type Change struct {
@@ -37,26 +38,6 @@ type Change struct {
 
 type Resolver func(ctx context.Context, ref string) (string, error)
 
-func BytesToHumanSize(b int64) string {
-	if b == 0 {
-		return "unlimited"
-	}
-	if b < 1024 {
-		return fmt.Sprintf("%d B", b)
-	}
-
-	units := []string{"B", "k", "M", "G", "T", "P", "E"}
-	size := float64(b)
-	exp := 0
-
-	for size >= 1024 && exp < len(units)-1 {
-		size /= 1024
-		exp++
-	}
-
-	return fmt.Sprintf("%.1f %sB", size, units[exp])
-}
-
 func ShortDigest(digest string) string {
 	if h, ok := strings.CutPrefix(digest, "sha256:"); ok && len(h) > 12 {
 		return "sha256:" + h[:12] + "..."
@@ -64,10 +45,8 @@ func ShortDigest(digest string) string {
 	return digest
 }
 
-func Diff(ctx context.Context, desired, running []Service, resolve Resolver) ([]Change, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+func Diff(ctx context.Context, desired, running []Service, recorded map[string]map[string]any, resolve Resolver) []Change {
 	var out []Change
-	defer cancel()
 	live := map[string]Service{}
 	for _, svc := range running {
 		live[svc.Name] = svc
@@ -86,7 +65,7 @@ func Diff(ctx context.Context, desired, running []Service, resolve Resolver) ([]
 			c.Reason = append(c.Reason, fmt.Sprintf("image %s -> %s", r.Image, desiredService.Image))
 		} else if r.TaggedID != "" && r.TaggedID != r.ImageID {
 			c.Reason = append(c.Reason, fmt.Sprintf("image %q changed on this machine %s -> %s", desiredService.Image, ShortDigest(r.ImageID), ShortDigest(r.TaggedID)))
-		} else if !desiredService.Build && r.Digest != "" && resolve != nil {
+		} else if desiredService.Config["build"] == nil && r.Digest != "" && resolve != nil {
 			got, err := resolve(ctx, desiredService.Image)
 			if err != nil {
 				c.Notes = append(c.Notes, "could not check registry: "+err.Error())
@@ -96,18 +75,8 @@ func Diff(ctx context.Context, desired, running []Service, resolve Resolver) ([]
 			}
 		}
 
-		if r.MemLimit != desiredService.MemLimit {
-			c.Reason = append(c.Reason, fmt.Sprintf("Different Memory Limit %s running vs %s stated", BytesToHumanSize(r.MemLimit), BytesToHumanSize(desiredService.MemLimit)))
-		}
-		var changedKeys []string
-		for k, v := range desiredService.Env {
-			if r.Env[k] != v {
-				changedKeys = append(changedKeys, k)
-			}
-		}
-		if len(changedKeys) > 0 {
-			sort.Strings(changedKeys)
-			c.Reason = append(c.Reason, fmt.Sprintf("%d env value(s) changed (%s), values hidden", len(changedKeys), strings.Join(changedKeys, ", ")))
+		if old, ok := recorded[desiredService.Name]; ok {
+			c.Reason = append(c.Reason, configChanges(old, desiredService.Config)...)
 		}
 
 		if len(c.Reason) > 0 {
@@ -130,7 +99,7 @@ func Diff(ctx context.Context, desired, running []Service, resolve Resolver) ([]
 		}
 		return out[i].Service < out[j].Service
 	})
-	return out, nil
+	return out
 }
 
 func Render(w io.Writer, changes []Change) {
@@ -155,4 +124,64 @@ func (s Service) Fingerprint() string {
 		return s.Digest
 	}
 	return s.ImageID
+}
+
+// image is compared against the running container above, with a better
+// message, so the recorded-config diff leaves it out.
+var checkedLive = map[string]bool{"image": true}
+
+// configChanges lists every top-level setting that differs between the config
+// recorded at the last deploy and the one rendered now.
+func configChanges(old, cur map[string]any) []string {
+	keys := map[string]bool{}
+	for k := range old {
+		keys[k] = true
+	}
+	for k := range cur {
+		keys[k] = true
+	}
+
+	var out []string
+	for _, k := range slices.Sorted(maps.Keys(keys)) {
+		if checkedLive[k] || reflect.DeepEqual(old[k], cur[k]) {
+			continue
+		}
+		if k == "environment" { // values are hashes: name the keys, never print them
+			names := changedEnv(old[k], cur[k])
+			out = append(out, fmt.Sprintf("%d env value(s) changed (%s), values hidden", len(names), strings.Join(names, ", ")))
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s: %s -> %s", k, compact(old[k]), compact(cur[k])))
+	}
+	return out
+}
+
+// compact prints a config value on one short line.
+func compact(v any) string {
+	if v == nil {
+		return "none"
+	}
+	b, _ := json.Marshal(v)
+	if s := string(b); len(s) <= 60 {
+		return s
+	}
+	return string(b[:57]) + "..."
+}
+
+func changedEnv(old, cur any) []string {
+	o, _ := old.(map[string]any)
+	c, _ := cur.(map[string]any)
+	var names []string
+	for k := range o {
+		if !reflect.DeepEqual(o[k], c[k]) {
+			names = append(names, k)
+		}
+	}
+	for k := range c {
+		if _, ok := o[k]; !ok {
+			names = append(names, k)
+		}
+	}
+	sort.Strings(names)
+	return names
 }

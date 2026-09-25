@@ -79,6 +79,24 @@ func TestApplyStartsStoppedContainer(t *testing.T) {
 	}
 }
 
+// A port change is found by comparing with the config recorded at the last
+// deploy, then deployed and recorded like any other change.
+func TestApplyDeploysPortChange(t *testing.T) {
+	d := newDeployTest(t)
+
+	d.useImage("nginx:1.26-alpine")
+	d.apply()
+
+	d.writeCompose("services:\n  web:\n    image: nginx:1.26-alpine\n    ports: [\"18090:80\"]\n")
+	d.apply()
+
+	out, _ := exec.Command("docker", "port", webContainer, "80").Output()
+	if !strings.Contains(string(out), "18090") {
+		t.Fatalf("port not published after apply, docker port says %q", out)
+	}
+	d.expectEntries(2) // the recorded config shows the port change, so it is recorded
+}
+
 // deployTest is a throwaway Compose project named "cptest" in a temp dir.
 type deployTest struct {
 	t    *testing.T
@@ -101,8 +119,12 @@ func newDeployTest(t *testing.T) *deployTest {
 }
 
 func (d *deployTest) useImage(image string) {
+	d.writeCompose("services:\n  web:\n    image: " + image + "\n")
+}
+
+func (d *deployTest) writeCompose(contents string) {
 	d.t.Helper()
-	if err := os.WriteFile(filepath.Join(d.dir, "compose.yaml"), []byte("services:\n  web:\n    image: "+image+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(d.dir, "compose.yaml"), []byte(contents), 0o644); err != nil {
 		d.t.Fatal(err)
 	}
 }

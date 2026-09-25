@@ -5,6 +5,10 @@ package compose
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"sort"
 
 	"github.com/Ali-932/compose-plan/internal/plan"
@@ -47,18 +51,27 @@ func Load(ctx context.Context, files, envFiles []string, projectName string) (Pr
 func services(p *types.Project) []plan.Service {
 	var out []plan.Service
 	for name, s := range p.Services {
-		mem := int64(s.MemLimit)
-		if mem == 0 && s.Deploy != nil && s.Deploy.Resources.Limits != nil {
-			mem = int64(s.Deploy.Resources.Limits.MemoryBytes)
-		}
-		env := map[string]string{}
-		for k, v := range s.Environment {
-			if v != nil {
-				env[k] = *v
-			}
-		}
-		out = append(out, plan.Service{Name: name, Image: s.Image, MemLimit: mem, Env: env, Build: s.Build != nil})
+		out = append(out, plan.Service{Name: name, Image: s.Image, Config: configOf(s)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
+}
+
+// configOf is the service's fully rendered config as plain JSON data, the way
+// Helm keeps a release's manifest. Env values are replaced by a short hash so
+// the history file can say a secret changed without ever storing it.
+func configOf(s types.ServiceConfig) map[string]any {
+	raw, _ := json.Marshal(s)
+	var cfg map[string]any
+	json.Unmarshal(raw, &cfg)
+
+	if env, ok := cfg["environment"].(map[string]any); ok {
+		for k, v := range env {
+			if v != nil {
+				sum := sha256.Sum256([]byte(fmt.Sprint(v)))
+				env[k] = hex.EncodeToString(sum[:])[:8]
+			}
+		}
+	}
+	return cfg
 }

@@ -1,6 +1,7 @@
 package history
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,5 +94,13 @@ func TestFind(t *testing.T) {
 	}
 	if e, err := Find(entries, 9); err == nil || e != nil {
 		t.Errorf("Find(9) = %+v, %v; want nil and an error", e, err)
+	}
+}
+
+// Entries written before Configs existed must keep their hash.
+func TestEntryWithoutConfigsKeepsItsHash(t *testing.T) {
+	raw, _ := json.Marshal(Entry{Seq: 1, User: "ali"})
+	if strings.Contains(string(raw), "Configs") {
+		t.Errorf("an entry without configs must marshal exactly as before, got %s", raw)
 	}
 }

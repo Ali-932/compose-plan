@@ -46,10 +46,17 @@ func TestFingerprint(t *testing.T) {
 	}
 }
 
-func TestBytesToHumanSize(t *testing.T) {
-	for in, want := range map[int64]string{0: "unlimited", 512 << 20: "512.0 MB", 1 << 30: "1.0 GB"} {
-		if got := BytesToHumanSize(in); got != want {
-			t.Errorf("BytesToHumanSize(%d) = %q, want %q", in, got, want)
+func TestConfigChanges(t *testing.T) {
+	old := map[string]any{"command": "a", "ports": []any{"80"}, "image": "x:1", "user": "root"}
+	cur := map[string]any{"command": "b", "ports": []any{"80"}, "image": "x:2", "volumes": []any{"data:/d"}}
+
+	got := strings.Join(configChanges(old, cur), "\n")
+	for _, want := range []string{`command: "a" -> "b"`, `user: "root" -> none`, `volumes: none -> ["data:/d"]`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
 		}
+	}
+	if strings.Contains(got, "ports") || strings.Contains(got, "image") {
+		t.Errorf("unchanged ports and live-checked image must not be listed:\n%s", got)
 	}
 }

@@ -8,10 +8,7 @@ import (
 
 func diff(t *testing.T, desired, running []Service) map[string]Change {
 	t.Helper()
-	changes, err := Diff(context.Background(), desired, running, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	changes := Diff(context.Background(), desired, running, nil, nil)
 	out := map[string]Change{}
 	for _, c := range changes {
 		out[c.Service] = c
@@ -21,7 +18,7 @@ func diff(t *testing.T, desired, running []Service) map[string]Change {
 
 func TestDiffIdenticalIsNoChange(t *testing.T) {
 	same := []Service{
-		{Name: "web", Image: "nginx:1.27", MemLimit: 512 << 20, Env: map[string]string{"A": "1"}},
+		{Name: "web", Image: "nginx:1.27"},
 		{Name: "db", Image: "redis:7"},
 	}
 	for name, c := range diff(t, same, same) {
@@ -65,30 +62,50 @@ func TestDiffImageRebuiltLocally(t *testing.T) {
 }
 
 func TestDiffMemoryAndEnvGiveOneChange(t *testing.T) {
-	c := diff(t,
-		[]Service{{Name: "worker", Image: "app:1", MemLimit: 1 << 30, Env: map[string]string{"A": "1", "B": "2"}}},
-		// PATH comes from the image, not the file, so it must be ignored.
-		[]Service{{Name: "worker", Image: "app:1", MemLimit: 512 << 20, Env: map[string]string{"A": "1", "B": "old", "PATH": "/bin"}}},
-	)["worker"]
+	was := map[string]any{"mem_limit": 536870912.0, "environment": map[string]any{"A": "hashA", "B": "hashB"}}
+	now := map[string]any{"mem_limit": 1073741824.0, "environment": map[string]any{"A": "hashA", "B": "hashB2"}}
+
+	c := Diff(context.Background(),
+		[]Service{{Name: "worker", Image: "app:1", Config: now}},
+		[]Service{{Name: "worker", Image: "app:1"}},
+		map[string]map[string]any{"worker": was}, nil)[0]
+
 	if c.Action != "update" || len(c.Reason) != 2 {
 		t.Fatalf("want one update with two reasons, got %s %v", c.Action, c.Reason)
 	}
-	env := c.Reason[1]
-	if !strings.Contains(env, "(B)") || strings.Contains(env, "old") || strings.Contains(env, "PATH") {
-		t.Errorf("env reason must name only B and hide values, got %q", env)
+	all := strings.Join(c.Reason, ";")
+	if !strings.Contains(all, "(B)") || strings.Contains(all, "hashB") || !strings.Contains(all, "mem_limit") {
+		t.Errorf("env reason must name only B and hide values, memory must be listed: %v", c.Reason)
 	}
 }
 
 func TestDiffNoChangeSortsLast(t *testing.T) {
-	changes, _ := Diff(context.Background(),
+	changes := Diff(context.Background(),
 		[]Service{{Name: "a", Image: "x"}, {Name: "b", Image: "new"}, {Name: "c", Image: "x"}},
 		[]Service{{Name: "a", Image: "x"}, {Name: "b", Image: "old"}, {Name: "c", Image: "x"}},
-		nil)
+		nil, nil)
 	var order []string
 	for _, c := range changes {
 		order = append(order, c.Service)
 	}
 	if strings.Join(order, ",") != "b,a,c" {
 		t.Errorf("got order %v, want b first then a,c", order)
+	}
+}
+
+func TestDiffReportsRecordedConfigChanges(t *testing.T) {
+	desired := []Service{{Name: "web", Image: "nginx", Config: map[string]any{"image": "nginx", "ports": []any{"8080:80"}}}}
+	running := []Service{{Name: "web", Image: "nginx"}}
+
+	changed := Diff(context.Background(), desired, running,
+		map[string]map[string]any{"web": {"image": "nginx"}}, nil)
+	if c := changed[0]; c.Action != "update" || !strings.Contains(strings.Join(c.Reason, ";"), "ports: none -> ") {
+		t.Errorf("port added since the last deploy: got %s %v", c.Action, c.Reason)
+	}
+
+	same := Diff(context.Background(), desired, running,
+		map[string]map[string]any{"web": desired[0].Config}, nil)
+	if same[0].Action != "no change" {
+		t.Errorf("config identical to the last deploy: got %s %v", same[0].Action, same[0].Reason)
 	}
 }

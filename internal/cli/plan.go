@@ -6,6 +6,7 @@ import (
 
 	"github.com/Ali-932/compose-plan/internal/compose"
 	"github.com/Ali-932/compose-plan/internal/engine"
+	"github.com/Ali-932/compose-plan/internal/history"
 	"github.com/Ali-932/compose-plan/internal/plan"
 	"github.com/Ali-932/compose-plan/internal/registry"
 )
@@ -21,7 +22,15 @@ func RunPlan(ctx context.Context, opts Options) (compose.Project, map[string]boo
 	if err != nil {
 		return project, nil, err
 	}
-	changes, _ := plan.Diff(ctx, project.Services, running, registry.Resolve)
+	entries, err := history.Read(historyPath(project))
+	if err != nil {
+		return project, nil, err
+	}
+	var recorded map[string]map[string]any
+	if len(entries) > 0 {
+		recorded = entries[len(entries)-1].Configs
+	}
+	changes := plan.Diff(ctx, project.Services, running, recorded, registry.Resolve)
 	plan.Render(os.Stdout, changes)
 
 	changed := make(map[string]bool)

@@ -41,16 +41,8 @@ func Running(ctx context.Context, projectName string) ([]plan.Service, error) {
 		}
 
 		s := plan.Service{
-			Name:     name,
-			Image:    insp.Container.Config.Image,
-			MemLimit: insp.Container.HostConfig.Memory,
-			Env:      map[string]string{},
-		}
-		for _, kv := range insp.Container.Config.Env {
-			if k, v, ok := strings.Cut(kv, "="); ok {
-				s.Env[k] = v
-			}
-
+			Name:  name,
+			Image: insp.Container.Config.Image,
 		}
 		img, err := apiClient.ImageInspect(ctx, c.ImageID)
 

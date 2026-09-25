@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"sort"
@@ -19,10 +20,6 @@ func RunApply(ctx context.Context, opts Options, summary string) error {
 	project, changed, err := RunPlan(ctx, opts)
 	if err != nil {
 		return err
-	}
-	if len(changed) == 0 {
-		fmt.Println("nothing to deploy")
-		return nil
 	}
 
 	args := []string{"compose"}
@@ -73,8 +70,24 @@ func RunApply(ctx context.Context, opts Options, summary string) error {
 		digests[s.Name] = s.Fingerprint()
 	}
 
+	entries, err := history.Read(historyPath(project))
+	if err != nil {
+		return err
+	}
+	if len(changed) == 0 && len(entries) > 0 && maps.Equal(entries[len(entries)-1].Services, digests) {
+		fmt.Println("nothing changed")
+		return nil
+	}
+
 	if summary == "" {
 		summary = strings.Join(servicesChanged, ", ")
+	}
+	if summary == "" {
+		summary = "images changed"
+	}
+	configs := map[string]map[string]any{}
+	for _, s := range project.Services {
+		configs[s.Name] = s.Config
 	}
 	entry, err := history.Append(history.Entry{
 		Time:     time.Now(),
@@ -82,6 +95,7 @@ func RunApply(ctx context.Context, opts Options, summary string) error {
 		Commit:   gitHead(project.WorkingDir),
 		Summary:  summary,
 		Services: digests,
+		Configs:  configs,
 	}, historyPath(project))
 	if err != nil {
 		return err

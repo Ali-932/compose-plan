@@ -26,6 +26,7 @@ type Entry struct {
 	Commit   string
 	Summary  string
 	Services map[string]string
+	Configs  map[string]map[string]any `json:",omitempty"` // service -> rendered config, env values hashed
 	Hash     string
 	PrevHash string
 }
