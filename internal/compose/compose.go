@@ -15,6 +15,7 @@ import (
 type Project struct {
 	Name       string
 	WorkingDir string
+	Files      []string // the compose files actually loaded, found or given with -f
 	Services   []plan.Service
 }
 
@@ -40,7 +41,7 @@ func Load(ctx context.Context, files, envFiles []string, projectName string) (Pr
 		return Project{}, err
 	}
 
-	return Project{Name: p.Name, WorkingDir: p.WorkingDir, Services: services(p)}, nil
+	return Project{Name: p.Name, WorkingDir: p.WorkingDir, Files: p.ComposeFiles, Services: services(p)}, nil
 }
 
 func services(p *types.Project) []plan.Service {

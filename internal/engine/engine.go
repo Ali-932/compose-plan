@@ -18,8 +18,9 @@ func Running(ctx context.Context, projectName string) ([]plan.Service, error) {
 		return nil, err
 	}
 	defer apiClient.Close()
+	// Running containers only: a stopped one counts as not running, so plan
+	// reports "create" and apply starts it again.
 	result, err := apiClient.ContainerList(ctx, client.ContainerListOptions{
-		All: true,
 		Filters: make(client.Filters).
 			Add("label", "com.docker.compose.project="+projectName),
 	})

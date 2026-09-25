@@ -84,3 +84,14 @@ func TestReadDetectsTampering(t *testing.T) {
 		t.Fatal("Read accepted a tampered file")
 	}
 }
+
+func TestFind(t *testing.T) {
+	entries := []Entry{{Seq: 1}, {Seq: 2, Summary: "second"}}
+
+	if e, err := Find(entries, 2); err != nil || e.Summary != "second" {
+		t.Errorf("Find(2) = %+v, %v", e, err)
+	}
+	if e, err := Find(entries, 9); err == nil || e != nil {
+		t.Errorf("Find(9) = %+v, %v; want nil and an error", e, err)
+	}
+}

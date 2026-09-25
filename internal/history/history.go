@@ -106,3 +106,12 @@ func Read(storageFilePath string) ([]Entry, error) {
 	return entries, nil
 
 }
+
+func Find(entries []Entry, seq int) (*Entry, error) {
+	for i := range entries {
+		if entries[i].Seq == seq {
+			return &entries[i], nil
+		}
+	}
+	return nil, fmt.Errorf("no entry with seq %d", seq)
+}
