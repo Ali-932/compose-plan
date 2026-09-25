@@ -4,6 +4,8 @@ compose-plan shows what a Docker Compose deploy will change before you run it. I
 
 `docker compose up` recreates whatever it decides changed. It does not tell you why, and a tag like `latest` can point to a new image without your file changing. After the deploy, nothing records what was running before.
 
+![compose-plan demo: plan, apply, history, diff and rollback](docs/demo.gif)
+
 ```
 $ compose-plan plan
 cache   update   volumes: none -> [{"source":"cache-data","target":"/data","type":"volume",...
